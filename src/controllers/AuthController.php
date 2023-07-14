@@ -45,10 +45,10 @@ class AuthController extends BaseController
     /**
      * @throws HttpException
      */
-    public function init()
+    public function init(): void
     {
         parent::init();
-        \Yii::$app->response->format = \yii\web\Response::FORMAT_JSON;
+        \Yii::$app->response->format = Response::FORMAT_JSON;
     }
 
     /**

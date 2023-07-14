@@ -15,6 +15,8 @@ class OrganisationSettings extends Model
     public $accountRounding;
     public $accountDiscounts;
     public $accountAdditionalFees;
+    public $accountLineItemTax;
+    public $accountInvoiceStatus;
 
     /**
      * Returns a new model from the passed connection object
@@ -37,17 +39,20 @@ class OrganisationSettings extends Model
         $organisationSettings->accountRounding = $settings->accountRounding ?? null;
         $organisationSettings->accountDiscounts = $settings->accountDiscounts ?? null;
         $organisationSettings->accountAdditionalFees = $settings->accountAdditionalFees ?? null;
+        $organisationSettings->accountLineItemTax = $settings->accountLineItemTax ?? 'Exclusive';
+        $organisationSettings->accountInvoiceStatus = $settings->accountInvoiceStatus ?? 'AUTHORISED';
 
         return $organisationSettings;
     }
 
-    public function rules()
+    public function rules(): array
     {
         parent::rules();
 
         return [
             [['accountSales', 'accountReceivable', 'accountShipping', 'accountRounding'], 'required'],
             [['accountSales', 'accountReceivable', 'accountShipping', 'accountRounding', 'accountDiscounts', 'accountAdditionalFees'], 'integer'],
+            [['accountLineItemTax', 'accountInvoiceStatus'], 'string'],
             [['createPayments', 'updateInventory'], 'boolean']
         ];
     }

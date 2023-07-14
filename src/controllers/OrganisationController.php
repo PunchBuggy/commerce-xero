@@ -25,6 +25,8 @@ use thejoshsmith\commerce\xero\models\OrganisationSettings as OrganisationSettin
 use Craft;
 use Throwable;
 
+use yii\base\InvalidConfigException;
+use yii\web\BadRequestHttpException;
 use yii\web\Response;
 use yii\web\NotFoundHttpException;
 
@@ -41,7 +43,7 @@ class OrganisationController extends BaseController
      *
      * @return Response
      */
-    public function actionIndex(OrganisationSettingsModel $orgSettings = null)
+    public function actionIndex(OrganisationSettingsModel $orgSettings = null): Response
     {
         $pluginSettings = Plugin::getInstance()->getSettings();
         $xeroConnections = Plugin::getInstance()->getXeroConnections();
@@ -87,9 +89,12 @@ class OrganisationController extends BaseController
     /**
      * Saves organisation settings
      *
-     * @return void
+     * @return Response|null
+     * @throws BadRequestHttpException
+     * @throws InvalidConfigException
+     * @throws NotFoundHttpException
      */
-    public function actionSaveSettings()
+    public function actionSaveSettings(): ?Response
     {
         $this->requirePostRequest();
 

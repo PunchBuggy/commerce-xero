@@ -16,6 +16,7 @@ use thejoshsmith\commerce\xero\events\InvoiceEvent;
 use thejoshsmith\commerce\xero\events\LineItemEvent;
 use Throwable;
 
+use XeroPHP\Remote\Exception\NotFoundException;
 use yii\base\Exception;
 
 use craft\base\Component;
@@ -161,15 +162,16 @@ class XeroAPI extends Component
     {
         try {
             // this can return either fullname or their username (email hopefully)
-            $user = $order->getUser();
+            $user = $order->getCustomer();
 
             // Define contact details
             // Note: It's possible for customers to _only_ have
             // an email address, so we need to cater for that scenario
+            $address = $order->getBillingAddress() ?: $order->getShippingAddress();
             $contactEmail = $user ? $user->email : $order->getEmail();
-            $contactName = $user ? $user->getName() : $order->getEmail();
-            $contactFirstName = $user->firstName ?? null;
-            $contactLastName = $user->lastName ?? null;
+            $contactName = $address->fullName ?? $contactEmail;
+            $contactFirstName = $address->firstName ?? null;
+            $contactLastName = $address->lastName ?? null;
 
             $contact = $this->getApplication()->load(Contact::class)->where(
                 '
@@ -253,6 +255,20 @@ class XeroAPI extends Component
             $lineItem = $beforeAddLineItemEvent->lineItem;
 
             $invoice->addLineItem($lineItem);
+
+            //Check for line item adjustments
+            $lineItemAdjustments = $orderItem->getAdjustments();
+
+            foreach ($lineItemAdjustments as $lineItemAdjustment) {
+                if ($lineItemAdjustment->type == 'discount' ) {
+                    $lineItem = new LineItem($this->getApplication());
+                    $lineItem->setAccountCode($this->_client->getOrgSettings()->accountDiscounts);
+                    $lineItem->setDescription($lineItemAdjustment->name);
+                    $lineItem->setQuantity(1);
+                    $lineItem->setUnitAmount(Plugin::getInstance()->withDecimals($this->decimals, $lineItemAdjustment->amount));
+                    $invoice->addLineItem($lineItem);
+                }
+            }
         }
 
         // get all adjustments (discounts,shipping etc)
@@ -268,7 +284,7 @@ class XeroAPI extends Component
                 $invoice->addLineItem($lineItem);
             } elseif ($adjustment->type == 'discount' ) {
                 $lineItem = new LineItem($this->getApplication());
-                $lineItem->setAccountCode($this->_client->getOrgSettings()->accountDiscount);
+                $lineItem->setAccountCode($this->_client->getOrgSettings()->accountDiscounts);
                 $lineItem->setDescription($adjustment->name);
                 $lineItem->setQuantity(1);
                 $lineItem->setUnitAmount(Plugin::getInstance()->withDecimals($this->decimals, $adjustment->amount));
@@ -284,10 +300,10 @@ class XeroAPI extends Component
         }
 
         // setup invoice
-        $invoice->setStatus('AUTHORISED')
+       $invoice->setStatus($this->_client->getOrgSettings()->accountInvoiceStatus) // Optional (Authorised/Draft/Submitted)
             ->setType('ACCREC')
             ->setContact($contact)
-            ->setLineAmountType("Exclusive") // TODO: this should be optional (Inclusive/Exclusive)
+            ->setLineAmountType($this->_client->getOrgSettings()->accountLineItemTax) // Optional (Inclusive/Exclusive)
             ->setCurrencyCode($order->getPaymentCurrency())
             ->setInvoiceNumber($order->reference)
             ->setSentToContact(true)
@@ -427,39 +443,28 @@ class XeroAPI extends Component
         $exceptionType = get_class($e);
 
         switch($exceptionType) {
-        case NotFoundException::class:
-            throw new Exception('The resource you requested in Xero could not be found.');
-            break;
+            case NotFoundException::class:
+                throw new Exception('The resource you requested in Xero could not be found.');
+                 case BadRequestException::class:
+                throw new Exception($e->getMessage());
+                break;
 
-        case BadRequestException::class:
-            throw new Exception($e->getMessage());
-            break;
+            case ForbiddenException::class:
+                // revoke connection
+                Plugin::getInstance()
+                    ->getXeroConnections()
+                    ->setDisconnected($this->_client->getConnection());
+                throw new Exception('You don\'t have access to this organisation. Please re-authenticate to resume access.');
 
-        case ForbiddenException::class:
-            // revoke connection
-            Plugin::getInstance()
-                ->getXeroConnections()
-                ->setDisconnected($this->_client->getConnection());
-            throw new Exception('You don\'t have access to this organisation. Please re-authenticate to resume access.');
-            break;
+            case NotAvailableException::class:
+            case OrganisationOfflineException::class:
+                throw new Exception('Xero is currently offline. Please try again shortly.');
 
-        case NotAvailableException::class:
-        case OrganisationOfflineException::class:
-            throw new Exception('Xero is currently offline. Please try again shortly.');
-            break;
+            case RateLimitExceededException::class:
+                throw new Exception('You have exceeded the Xero API rate limit.');
 
-        case RateLimitExceededException::class:
-            throw new Exception('You have exceeded the Xero API rate limit.');
-            break;
-
-        default:
-            throw new Exception('Something went wrong fetching data from Xero, please try again');
-            break;
+            default:
+                throw new Exception('Something went wrong fetching data from Xero, please try again');
         }
-
-        Craft::error(
-            $e->getMessage(),
-            'xero-api'
-        );
     }
 }
