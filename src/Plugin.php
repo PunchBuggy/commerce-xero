@@ -163,7 +163,7 @@ class Plugin extends CraftPlugin
 
     public function getSettingsResponse(): mixed
     {
-        Craft::$app->controller->redirect(UrlHelper::cpUrl('xero/settings'));
+        return Craft::$app->controller->redirect(UrlHelper::cpUrl('xero/settings'));
     }
 
     // Protected Methods
